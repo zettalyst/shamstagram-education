@@ -1,237 +1,290 @@
 """
-댓글 관련 API 엔드포인트
-교육용 프로젝트 - 11단계: Comments Backend
+댓글 관련 API 라우트
 """
-
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.models import db
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from app.models.comment import Comment
 from app.models.post import Post
-from app.models.user import User
-from app.services.ai_service import ai_service
+from app.services.auth_service import auth_required
 from app.services.bot_service import bot_service
-from app.utils.decorators import auth_required
-import threading
-import random
+from app import db
+import logging
 
-bp = Blueprint('comments', __name__, url_prefix='/api/comments')
+# 블루프린트 생성
+comments_bp = Blueprint('comments', __name__)
 
-@bp.route('/', methods=['POST'])
+# Rate limiter 설정
+limiter = Limiter(key_func=get_remote_address)
+
+logger = logging.getLogger(__name__)
+
+
+@comments_bp.route('/posts/<int:post_id>/comments', methods=['GET'])
+def get_comments(post_id):
+    """특정 게시물의 댓글 목록 조회"""
+    try:
+        # 포스트 존재 확인
+        post = Post.query.get_or_404(post_id)
+        
+        # 댓글 조회 (최신순, 대댓글 포함)
+        comments = Comment.query.filter_by(post_id=post_id)\
+                               .order_by(Comment.created_at.desc())\
+                               .all()
+        
+        # 댓글을 트리 구조로 변환
+        comment_tree = []
+        comment_dict = {}
+        
+        # 모든 댓글을 딕셔너리로 변환
+        for comment in comments:
+            comment_data = {
+                'id': comment.id,
+                'content': comment.content,
+                'original_text': comment.original_text,
+                'user_id': comment.user_id,
+                'user_nickname': comment.user.nickname if comment.user else None,
+                'user_avatar': comment.user.avatar if comment.user else None,
+                'bot_name': comment.bot_name,
+                'is_bot': comment.is_bot,
+                'parent_id': comment.parent_id,
+                'created_at': comment.created_at.isoformat(),
+                'replies': []
+            }
+            comment_dict[comment.id] = comment_data
+        
+        # 트리 구조 구성
+        for comment in comments:
+            comment_data = comment_dict[comment.id]
+            if comment.parent_id is None:
+                # 최상위 댓글
+                comment_tree.append(comment_data)
+            else:
+                # 대댓글
+                if comment.parent_id in comment_dict:
+                    comment_dict[comment.parent_id]['replies'].append(comment_data)
+        
+        # 최신순으로 정렬 (대댓글도 최신순)
+        comment_tree.sort(key=lambda x: x['created_at'], reverse=True)
+        for comment in comment_tree:
+            comment['replies'].sort(key=lambda x: x['created_at'], reverse=True)
+        
+        return jsonify({
+            'comments': comment_tree,
+            'total': len(comments)
+        })
+        
+    except Exception as e:
+        logger.error(f"댓글 조회 실패: {e}")
+        return jsonify({'error': '댓글을 불러올 수 없습니다'}), 500
+
+
+@comments_bp.route('/posts/<int:post_id>/comments', methods=['POST'])
 @auth_required
-def create_comment():
-    """댓글 생성
-    
-    사용자 댓글 생성 후 봇 대댓글 자동 스케줄링
-    """
+@limiter.limit("30 per minute")
+def create_comment(post_id, current_user):
+    """새 댓글 작성"""
     try:
         data = request.get_json()
-        post_id = data.get('post_id')
-        content = data.get('content')
-        parent_id = data.get('parent_id')  # 대댓글인 경우
         
-        # 필수 필드 검증
-        if not post_id or not content:
-            return jsonify({'error': '게시물 ID와 내용은 필수입니다'}), 400
+        if not data or not data.get('content'):
+            return jsonify({'error': '댓글 내용이 필요합니다'}), 400
         
-        # 게시물 존재 확인
-        post = Post.query.get(post_id)
-        if not post:
-            return jsonify({'error': '게시물을 찾을 수 없습니다'}), 404
+        content = data['content'].strip()
+        if len(content) < 1:
+            return jsonify({'error': '댓글 내용이 너무 짧습니다'}), 400
+        
+        if len(content) > 1000:
+            return jsonify({'error': '댓글이 너무 깁니다 (최대 1000자)'}), 400
+        
+        # 포스트 존재 확인
+        post = Post.query.get_or_404(post_id)
         
         # 부모 댓글 확인 (대댓글인 경우)
+        parent_id = data.get('parent_id')
         if parent_id:
-            parent_comment = Comment.query.get(parent_id)
-            if not parent_comment or parent_comment.post_id != post_id:
-                return jsonify({'error': '유효하지 않은 부모 댓글입니다'}), 400
-        
-        # 사용자 정보 가져오기
-        user_id = get_jwt_identity()
-        
-        # AI로 댓글 변환 (선택적)
-        ai_content = ai_service.transform_text(content)
+            parent_comment = Comment.query.get_or_404(parent_id)
+            if parent_comment.post_id != post_id:
+                return jsonify({'error': '잘못된 부모 댓글입니다'}), 400
         
         # 댓글 생성
         comment = Comment(
             post_id=post_id,
-            user_id=user_id,
+            user_id=current_user.id,
             parent_id=parent_id,
             original_text=content,
-            content=ai_content if ai_content else content,
+            content=content,
             is_bot=False
         )
         
         db.session.add(comment)
         db.session.commit()
         
-        # 봇 대댓글 스케줄링 (사용자 댓글에 대해서만)
-        if not parent_id:  # 최상위 댓글인 경우만
-            _schedule_bot_replies(comment.id, post.ai_text or post.original_text)
+        # 사용자 댓글에 대한 봇 답글 스케줄링 (최상위 댓글인 경우만)
+        if not parent_id:
+            try:
+                bot_service.schedule_bot_replies(
+                    parent_comment_id=comment.id,
+                    parent_comment_content=content,
+                    post_content=post.ai_text or post.original_text
+                )
+            except Exception as e:
+                logger.warning(f"봇 답글 스케줄링 실패: {e}")
         
-        return jsonify({
-            'message': '댓글이 생성되었습니다',
-            'comment': comment.to_dict()
-        }), 201
+        # 응답 데이터 구성
+        response_data = {
+            'id': comment.id,
+            'content': comment.content,
+            'original_text': comment.original_text,
+            'user_id': comment.user_id,
+            'user_nickname': current_user.nickname,
+            'user_avatar': current_user.avatar,
+            'bot_name': None,
+            'is_bot': False,
+            'parent_id': comment.parent_id,
+            'created_at': comment.created_at.isoformat(),
+            'replies': []
+        }
+        
+        return jsonify(response_data), 201
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'댓글 생성 중 오류가 발생했습니다: {str(e)}'}), 500
+        logger.error(f"댓글 작성 실패: {e}")
+        return jsonify({'error': '댓글 작성에 실패했습니다'}), 500
 
-@bp.route('/post/<int:post_id>', methods=['GET'])
-def get_post_comments(post_id):
-    """특정 게시물의 모든 댓글 조회 (스레드 구조)"""
-    try:
-        # 게시물 존재 확인
-        post = Post.query.get(post_id)
-        if not post:
-            return jsonify({'error': '게시물을 찾을 수 없습니다'}), 404
-        
-        # 최상위 댓글만 조회 (parent_id가 None인 것)
-        top_level_comments = Comment.query.filter_by(
-            post_id=post_id,
-            parent_id=None
-        ).order_by(Comment.created_at.desc()).all()
-        
-        # 스레드 구조로 변환
-        comments_data = [comment.to_dict(include_replies=True) for comment in top_level_comments]
-        
-        return jsonify({
-            'comments': comments_data,
-            'total': len(comments_data)
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': f'댓글 조회 중 오류가 발생했습니다: {str(e)}'}), 500
 
-@bp.route('/<int:comment_id>', methods=['DELETE'])
+@comments_bp.route('/comments/<int:comment_id>', methods=['DELETE'])
 @auth_required
-def delete_comment(comment_id):
-    """댓글 삭제 (작성자만 가능)"""
+@limiter.limit("10 per minute")
+def delete_comment(comment_id, current_user):
+    """댓글 삭제"""
     try:
-        user_id = get_jwt_identity()
-        comment = Comment.query.get(comment_id)
+        comment = Comment.query.get_or_404(comment_id)
         
-        if not comment:
-            return jsonify({'error': '댓글을 찾을 수 없습니다'}), 404
-        
-        # 작성자 확인
-        if comment.user_id != user_id:
+        # 본인 댓글만 삭제 가능
+        if comment.user_id != current_user.id:
             return jsonify({'error': '본인의 댓글만 삭제할 수 있습니다'}), 403
         
-        # 대댓글이 있는 경우 내용만 변경
-        if comment.replies:
+        # 봇 댓글은 삭제 불가
+        if comment.is_bot:
+            return jsonify({'error': '봇 댓글은 삭제할 수 없습니다'}), 403
+        
+        # 대댓글이 있는 경우 내용만 삭제 표시
+        has_replies = Comment.query.filter_by(parent_id=comment_id).first() is not None
+        
+        if has_replies:
             comment.content = "[삭제된 댓글입니다]"
-            comment.original_text = None
+            comment.original_text = "[삭제된 댓글입니다]"
         else:
             # 대댓글이 없으면 완전 삭제
             db.session.delete(comment)
         
         db.session.commit()
         
-        return jsonify({'message': '댓글이 삭제되었습니다'}), 200
+        return jsonify({'message': '댓글이 삭제되었습니다'})
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'댓글 삭제 중 오류가 발생했습니다: {str(e)}'}), 500
+        logger.error(f"댓글 삭제 실패: {e}")
+        return jsonify({'error': '댓글 삭제에 실패했습니다'}), 500
 
-def _schedule_bot_replies(comment_id, context_text):
-    """사용자 댓글에 대한 봇 대댓글 스케줄링
-    
-    Args:
-        comment_id: 부모 댓글 ID
-        context_text: 컨텍스트 추출용 텍스트
-    """
-    # 봇 2개 선택
-    selected_bots = random.sample(bot_service.bot_personas, min(2, len(bot_service.bot_personas)))
-    
-    for index, bot in enumerate(selected_bots):
-        # 대댓글은 더 빠르게 생성 (2-6초)
-        delay = random.randint(2, 6) + (index * 1.5)
-        
-        timer = threading.Timer(
-            delay,
-            _create_bot_reply,
-            args=[comment_id, bot, context_text]
-        )
-        timer.start()
 
-def _create_bot_reply(parent_comment_id, bot_persona, context_text):
-    """봇 대댓글 생성
-    
-    Args:
-        parent_comment_id: 부모 댓글 ID
-        bot_persona: 봇 페르소나 정보
-        context_text: 컨텍스트 추출용 텍스트
-    """
+@comments_bp.route('/comments/<int:comment_id>', methods=['PUT'])
+@auth_required
+@limiter.limit("20 per minute")
+def update_comment(comment_id, current_user):
+    """댓글 수정"""
     try:
-        # Flask 앱 컨텍스트 설정
-        from app import create_app
-        app = create_app()
+        data = request.get_json()
         
-        with app.app_context():
-            # 부모 댓글 확인
-            parent_comment = Comment.query.get(parent_comment_id)
-            if not parent_comment:
-                return
-            
-            # 봇 댓글 생성
-            bot_comment_text = bot_service.generate_bot_comment(bot_persona, context_text)
-            
-            bot_reply = Comment(
-                post_id=parent_comment.post_id,
-                user_id=None,  # 봇은 user_id가 없음
-                parent_id=parent_comment_id,
-                original_text=None,
-                content=bot_comment_text,
-                is_bot=True,
-                bot_name=bot_persona['name']
-            )
-            
-            db.session.add(bot_reply)
-            db.session.commit()
-            
-            print(f"봇 대댓글 생성 완료: {bot_persona['name']} -> 댓글 ID {parent_comment_id}")
-            
+        if not data or not data.get('content'):
+            return jsonify({'error': '댓글 내용이 필요합니다'}), 400
+        
+        content = data['content'].strip()
+        if len(content) < 1:
+            return jsonify({'error': '댓글 내용이 너무 짧습니다'}), 400
+        
+        if len(content) > 1000:
+            return jsonify({'error': '댓글이 너무 깁니다 (최대 1000자)'}), 400
+        
+        comment = Comment.query.get_or_404(comment_id)
+        
+        # 본인 댓글만 수정 가능
+        if comment.user_id != current_user.id:
+            return jsonify({'error': '본인의 댓글만 수정할 수 있습니다'}), 403
+        
+        # 봇 댓글은 수정 불가
+        if comment.is_bot:
+            return jsonify({'error': '봇 댓글은 수정할 수 없습니다'}), 403
+        
+        # 삭제된 댓글은 수정 불가
+        if comment.content == "[삭제된 댓글입니다]":
+            return jsonify({'error': '삭제된 댓글은 수정할 수 없습니다'}), 403
+        
+        # 댓글 수정
+        comment.content = content
+        comment.original_text = content
+        
+        db.session.commit()
+        
+        # 응답 데이터 구성
+        response_data = {
+            'id': comment.id,
+            'content': comment.content,
+            'original_text': comment.original_text,
+            'user_id': comment.user_id,
+            'user_nickname': current_user.nickname,
+            'user_avatar': current_user.avatar,
+            'bot_name': comment.bot_name,
+            'is_bot': comment.is_bot,
+            'parent_id': comment.parent_id,
+            'created_at': comment.created_at.isoformat(),
+            'replies': []
+        }
+        
+        return jsonify(response_data)
+        
     except Exception as e:
-        print(f"봇 대댓글 생성 중 오류: {e}")
+        db.session.rollback()
+        logger.error(f"댓글 수정 실패: {e}")
+        return jsonify({'error': '댓글 수정에 실패했습니다'}), 500
 
-# 게시물 생성 시 봇 댓글 자동 생성을 위한 헬퍼 함수
-def create_bot_comments_for_post(post_id, post_text, ai_text):
-    """게시물에 대한 봇 댓글 생성
-    
-    Args:
-        post_id: 게시물 ID
-        post_text: 원본 텍스트
-        ai_text: AI 변환 텍스트
-    """
+
+@comments_bp.route('/comments/<int:comment_id>/replies', methods=['GET'])
+def get_comment_replies(comment_id):
+    """특정 댓글의 답글 목록 조회"""
     try:
-        # Flask 앱 컨텍스트 설정
-        from app import create_app
-        app = create_app()
+        # 부모 댓글 존재 확인
+        parent_comment = Comment.query.get_or_404(comment_id)
         
-        with app.app_context():
-            # 봇 3개 선택
-            selected_bots = random.sample(bot_service.bot_personas, min(3, len(bot_service.bot_personas)))
-            context_text = ai_text if ai_text else post_text
-            
-            for bot in selected_bots:
-                # 봇 댓글 생성
-                bot_comment_text = bot_service.generate_bot_comment(bot, context_text)
-                
-                bot_comment = Comment(
-                    post_id=post_id,
-                    user_id=None,
-                    parent_id=None,
-                    original_text=None,
-                    content=bot_comment_text,
-                    is_bot=True,
-                    bot_name=bot['name']
-                )
-                
-                db.session.add(bot_comment)
-            
-            db.session.commit()
-            print(f"게시물 {post_id}에 봇 댓글 {len(selected_bots)}개 생성 완료")
-            
+        # 답글 조회
+        replies = Comment.query.filter_by(parent_id=comment_id)\
+                             .order_by(Comment.created_at.asc())\
+                             .all()
+        
+        # 응답 데이터 구성
+        reply_list = []
+        for reply in replies:
+            reply_data = {
+                'id': reply.id,
+                'content': reply.content,
+                'original_text': reply.original_text,
+                'user_id': reply.user_id,
+                'user_nickname': reply.user.nickname if reply.user else None,
+                'user_avatar': reply.user.avatar if reply.user else None,
+                'bot_name': reply.bot_name,
+                'is_bot': reply.is_bot,
+                'parent_id': reply.parent_id,
+                'created_at': reply.created_at.isoformat()
+            }
+            reply_list.append(reply_data)
+        
+        return jsonify({
+            'replies': reply_list,
+            'total': len(reply_list)
+        })
+        
     except Exception as e:
-        print(f"봇 댓글 생성 중 오류: {e}")
+        logger.error(f"답글 조회 실패: {e}")
+        return jsonify({'error': '답글을 불러올 수 없습니다'}), 500

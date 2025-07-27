@@ -2,7 +2,6 @@
 좋아요 모델
 
 사용자가 게시물에 누른 좋아요 정보를 저장하는 테이블을 정의합니다.
-STEP 13: 좋아요 기능 구현
 """
 
 from datetime import datetime, timezone

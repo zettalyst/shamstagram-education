@@ -2,7 +2,6 @@
 사용자 모델
 
 사용자 정보를 저장하는 테이블을 정의합니다.
-STEP 13: 좋아요 관계 추가
 """
 
 from datetime import datetime, timezone
