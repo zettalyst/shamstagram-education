@@ -59,10 +59,11 @@ def create_app(config_class):
         db.create_all()
     
     # 블루프린트 등록
-    from app.routes import main_bp, health_bp, auth_bp
+    from app.routes import main_bp, health_bp, auth_bp, posts_bp
     app.register_blueprint(main_bp)
     app.register_blueprint(health_bp, url_prefix='/api')
     app.register_blueprint(auth_bp)  # /api/auth 접두사는 블루프린트에서 정의됨
+    app.register_blueprint(posts_bp)  # /api/posts 접두사는 블루프린트에서 정의됨
     
     # 에러 핸들러 등록
     register_error_handlers(app)
