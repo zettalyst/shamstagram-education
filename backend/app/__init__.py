@@ -2,13 +2,14 @@
 Flask 애플리케이션 팩토리
 
 애플리케이션 인스턴스를 생성하고 설정을 적용합니다.
-STEP 13: 좋아요 기능 추가
 """
 
 from flask import Flask
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 
 # 확장(Extension) 인스턴스 생성
@@ -16,6 +17,10 @@ from flask_migrate import Migrate
 # create_app 함수에서 초기화합니다
 db = SQLAlchemy()
 migrate = Migrate()
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
 
 
 def create_app(config_class):
@@ -38,6 +43,7 @@ def create_app(config_class):
     # 확장 초기화
     db.init_app(app)
     migrate.init_app(app, db)
+    limiter.init_app(app)
     
     # CORS 설정 - 프론트엔드와의 통신을 위해 필요
     CORS(app, 
@@ -53,20 +59,17 @@ def create_app(config_class):
         db.create_all()
     
     # 블루프린트 등록
-    from app.routes import main_bp, health_bp
-    from app.routes.auth import auth_bp
-    from app.routes.posts import posts_bp
-    from app.routes.users import users_bp
+    from app.routes import main_bp, health_bp, auth_bp, posts_bp
+    from app.routes.comments import comments_bp
+    from app.routes.likes import likes_bp
     from app.routes.invitations import invitations_bp
-    from app.routes.likes import likes_bp  # 좋아요 라우트 추가
-    
     app.register_blueprint(main_bp)
     app.register_blueprint(health_bp, url_prefix='/api')
-    app.register_blueprint(auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(posts_bp, url_prefix='/api/posts')
-    app.register_blueprint(users_bp, url_prefix='/api/users')
-    app.register_blueprint(invitations_bp, url_prefix='/api/invitations')
-    app.register_blueprint(likes_bp, url_prefix='/api')  # 좋아요 라우트 등록
+    app.register_blueprint(auth_bp)  # /api/auth 접두사는 블루프린트에서 정의됨
+    app.register_blueprint(posts_bp)  # /api/posts 접두사는 블루프린트에서 정의됨
+    app.register_blueprint(comments_bp, url_prefix='/api')  # /api/comments 접두사
+    app.register_blueprint(likes_bp, url_prefix='/api')  # /api/likes 접두사
+    app.register_blueprint(invitations_bp)  # /api/invitations 접두사는 블루프린트에서 정의됨
     
     # 에러 핸들러 등록
     register_error_handlers(app)

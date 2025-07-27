@@ -1,296 +1,491 @@
 """
 게시물 관련 라우트
-
-게시물 CRUD 및 댓글, 좋아요 기능을 제공합니다.
+게시물 CRUD 및 페이지네이션 기능 제공
 """
 
+from flask import Blueprint, request, jsonify
+from sqlalchemy import desc
+from app.models import Post, User, Like
+from app import db, limiter
+from app.services.auth_service import auth_required
+from app.services.ai_service import get_ai_service
+from app.services.bot_service import bot_service
+from datetime import datetime
 import random
-import threading
-from datetime import datetime, timezone
-from functools import wraps
-from flask import Blueprint, request, jsonify, current_app
-from app import db
-from app.models import User, Post, Comment, Like
-from app.services.auth_service import AuthService
-from app.services.ai_service import AIService
+import logging
 
-# 블루프린트 생성
-posts_bp = Blueprint('posts', __name__)
+logger = logging.getLogger(__name__)
 
-# AI 서비스 인스턴스
-ai_service = AIService()
-
-
-def auth_required(f):
-    """인증이 필요한 엔드포인트를 위한 데코레이터"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        if not token:
-            return jsonify({'error': '인증이 필요합니다.'}), 401
-        
-        user_id = AuthService.get_current_user_id(token)
-        if not user_id:
-            return jsonify({'error': '유효하지 않은 토큰입니다.'}), 401
-        
-        # 사용자 확인
-        user = User.query.get(user_id)
-        if not user or not user.is_active:
-            return jsonify({'error': '사용자를 찾을 수 없습니다.'}), 401
-        
-        # request에 현재 사용자 정보 추가
-        request.current_user = user
-        return f(*args, **kwargs)
-    return decorated_function
-
-
-def schedule_bot_comments(post_id: int):
-    """봇 댓글을 예약합니다."""
-    def create_bot_comment(post_id: int, bot_name: str, delay: int):
-        """지연 후 봇 댓글을 생성합니다."""
-        with current_app.app_context():
-            post = Post.query.get(post_id)
-            if not post:
-                return
-            
-            # 봇 댓글 생성
-            bot_comment_data = ai_service.generate_bot_comment(post.ai_text, bot_name)
-            
-            comment = Comment(
-                post_id=post_id,
-                content=bot_comment_data['content'],
-                is_bot=True,
-                bot_name=bot_name,
-                delay=delay
-            )
-            
-            db.session.add(comment)
-            db.session.commit()
-    
-    # 3개의 랜덤 봇 선택
-    bot_names = random.sample(ai_service.get_bot_names(), 3)
-    
-    for i, bot_name in enumerate(bot_names):
-        delay = random.randint(3, 10) + i * 2  # 3-10초 + 인덱스별 추가 지연
-        timer = threading.Timer(delay, create_bot_comment, args=[post_id, bot_name, delay * 1000])
-        timer.start()
+# Blueprint 생성
+posts_bp = Blueprint('posts', __name__, url_prefix='/api/posts')
 
 
 @posts_bp.route('', methods=['GET'])
 @auth_required
 def get_posts():
-    """모든 게시물을 가져옵니다."""
-    # 최신순으로 정렬
-    posts = Post.query.order_by(Post.created_at.desc()).all()
+    """
+    게시물 목록 조회 (페이지네이션 포함)
     
-    result = []
-    for post in posts:
-        post_dict = post.to_dict()
-        
-        # 좋아요 여부 확인
-        is_liked = Like.query.filter_by(
-            user_id=request.current_user.id,
-            post_id=post.id
-        ).first() is not None
-        
-        post_dict['is_liked'] = is_liked
-        post_dict['is_owner'] = post.user_id == request.current_user.id
-        
-        # 봇 댓글만 포함
-        bot_comments = []
-        for comment in post.comments.filter_by(is_bot=True).all():
-            bot_comments.append(comment.to_dict())
-        
-        post_dict['bot_comments'] = bot_comments
-        post_dict['user_comment_count'] = post.comments.filter_by(is_bot=False).count()
-        
-        result.append(post_dict)
+    Query Parameters:
+        page (int): 페이지 번호 (기본값: 1)
+        limit (int): 페이지당 항목 수 (기본값: 10, 최대: 50)
     
-    return jsonify(result), 200
+    Returns:
+        200: 게시물 목록과 페이지네이션 정보
+    """
+    try:
+        # 페이지네이션 파라미터
+        page = request.args.get('page', 1, type=int)
+        limit = min(request.args.get('limit', 10, type=int), 50)  # 최대 50개
+        
+        # 게시물 쿼리 (최신순)
+        posts_query = Post.query.order_by(desc(Post.created_at))
+        
+        # 페이지네이션 적용
+        paginated = posts_query.paginate(
+            page=page,
+            per_page=limit,
+            error_out=False
+        )
+        
+        # 현재 사용자가 좋아요한 게시물 ID 목록
+        liked_post_ids = db.session.query(Like.post_id).filter_by(
+            user_id=request.user_id
+        ).all()
+        liked_post_ids = [id[0] for id in liked_post_ids]
+        
+        # 게시물 데이터 가공
+        posts_data = []
+        for post in paginated.items:
+            # 작성자 정보 포함
+            author = User.query.get(post.user_id)
+            posts_data.append({
+                'id': post.id,
+                'original_text': post.original_text,
+                'ai_text': post.ai_text,
+                'likes': post.likes,
+                'created_at': post.created_at.isoformat(),
+                'is_liked': post.id in liked_post_ids,
+                'author': {
+                    'id': author.id,
+                    'nickname': author.nickname,
+                    'avatar': author.avatar
+                } if author else None
+            })
+        
+        return jsonify({
+            'posts': posts_data,
+            'pagination': {
+                'page': paginated.page,
+                'pages': paginated.pages,
+                'per_page': paginated.per_page,
+                'total': paginated.total,
+                'has_prev': paginated.has_prev,
+                'has_next': paginated.has_next
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': '게시물 목록 조회 중 오류가 발생했습니다'}), 500
 
 
 @posts_bp.route('/<int:post_id>', methods=['GET'])
 @auth_required
 def get_post(post_id):
-    """특정 게시물을 가져옵니다."""
-    post = Post.query.get_or_404(post_id)
+    """
+    특정 게시물 조회
     
-    post_dict = post.to_dict()
+    Args:
+        post_id (int): 게시물 ID
     
-    # 좋아요 여부 확인
-    is_liked = Like.query.filter_by(
-        user_id=request.current_user.id,
-        post_id=post.id
-    ).first() is not None
-    
-    post_dict['is_liked'] = is_liked
-    post_dict['is_owner'] = post.user_id == request.current_user.id
-    
-    # 모든 댓글 포함 (봇 + 사용자)
-    comments = []
-    for comment in post.comments.order_by(Comment.created_at).all():
-        comment_dict = comment.to_dict(include_replies=True)
-        comments.append(comment_dict)
-    
-    post_dict['comments'] = comments
-    
-    return jsonify(post_dict), 200
+    Returns:
+        200: 게시물 상세 정보
+        404: 게시물 없음
+    """
+    try:
+        post = Post.query.get(post_id)
+        
+        if not post:
+            return jsonify({'error': '게시물을 찾을 수 없습니다'}), 404
+        
+        # 작성자 정보
+        author = User.query.get(post.user_id)
+        
+        # 현재 사용자가 좋아요했는지 확인
+        is_liked = Like.query.filter_by(
+            user_id=request.user_id,
+            post_id=post_id
+        ).first() is not None
+        
+        return jsonify({
+            'post': {
+                'id': post.id,
+                'original_text': post.original_text,
+                'ai_text': post.ai_text,
+                'likes': post.likes,
+                'created_at': post.created_at.isoformat(),
+                'is_liked': is_liked,
+                'author': {
+                    'id': author.id,
+                    'nickname': author.nickname,
+                    'avatar': author.avatar
+                } if author else None
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': '게시물 조회 중 오류가 발생했습니다'}), 500
 
 
 @posts_bp.route('', methods=['POST'])
 @auth_required
+@limiter.limit("5 per minute")  # 분당 5개 게시물 제한
 def create_post():
-    """새 게시물을 생성합니다."""
-    data = request.get_json()
-    original_text = data.get('original_text', '').strip()
+    """
+    새 게시물 작성
     
-    if not original_text:
-        return jsonify({'error': '내용을 입력해주세요.'}), 400
+    Request Body:
+        {
+            "text": "게시물 내용"
+        }
     
-    if len(original_text) > 500:
-        return jsonify({'error': '내용은 500자 이내로 입력해주세요.'}), 400
+    Returns:
+        201: 생성된 게시물
+        400: 잘못된 요청
+    """
+    try:
+        data = request.get_json()
+        
+        # 필수 필드 확인
+        if not data or 'text' not in data:
+            return jsonify({'error': '게시물 내용을 입력해주세요'}), 400
+        
+        text = data['text'].strip()
+        
+        # 게시물 길이 검증 (최소 1자, 최대 500자)
+        if len(text) < 1 or len(text) > 500:
+            return jsonify({'error': '게시물은 1-500자 사이여야 합니다'}), 400
+        
+        # AI 서비스를 사용하여 텍스트 변환
+        ai_service = get_ai_service()
+        ai_text = ai_service.transform_text(text)
+        
+        # 변환 검증
+        if not ai_service.validate_transformation(text, ai_text):
+            # 변환이 실패한 경우 원본 텍스트에 간단한 수식어 추가
+            ai_text = f"놀라운 소식! {text}"
+        
+        # 게시물 생성
+        post = Post(
+            user_id=request.user_id,
+            original_text=text,
+            ai_text=ai_text,  # AI 변환된 텍스트 사용
+            likes=random.randint(50000, 2000000)  # 데모용 초기 좋아요 수
+        )
+        
+        db.session.add(post)
+        db.session.commit()
+        
+        # 봇 댓글 스케줄링
+        try:
+            bot_service.schedule_bot_comments(
+                post_id=post.id,
+                post_content=ai_text,
+                original_text=text
+            )
+        except Exception as e:
+            logger.warning(f"봇 댓글 스케줄링 실패: {e}")
+        
+        # 작성자 정보
+        author = User.query.get(request.user_id)
+        
+        return jsonify({
+            'message': '게시물이 작성되었습니다',
+            'post': {
+                'id': post.id,
+                'original_text': post.original_text,
+                'ai_text': post.ai_text,
+                'likes': post.likes,
+                'created_at': post.created_at.isoformat(),
+                'is_liked': False,
+                'author': {
+                    'id': author.id,
+                    'nickname': author.nickname,
+                    'avatar': author.avatar
+                } if author else None
+            }
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': '게시물 작성 중 오류가 발생했습니다'}), 500
+
+
+@posts_bp.route('/<int:post_id>', methods=['PUT'])
+@auth_required
+def update_post(post_id):
+    """
+    게시물 수정
     
-    # AI로 텍스트 변환
-    ai_text = ai_service.transform_text(original_text)
+    Args:
+        post_id (int): 게시물 ID
     
-    # 게시물 생성
-    post = Post(
-        user_id=request.current_user.id,
-        original_text=original_text,
-        ai_text=ai_text
-    )
+    Request Body:
+        {
+            "text": "수정된 내용"
+        }
     
-    db.session.add(post)
-    db.session.commit()
-    
-    # 초기 좋아요 수 설정 (데모용)
-    initial_likes = random.randint(50000, 2000000)
-    for _ in range(min(initial_likes, 100)):  # 실제로는 100개만 생성
-        # 더미 데이터로 처리
-        pass
-    
-    # 봇 댓글 예약
-    schedule_bot_comments(post.id)
-    
-    # 응답
-    post_dict = post.to_dict()
-    post_dict['is_liked'] = False
-    post_dict['is_owner'] = True
-    post_dict['bot_comments'] = []
-    post_dict['user_comment_count'] = 0
-    
-    return jsonify(post_dict), 201
+    Returns:
+        200: 수정된 게시물
+        403: 권한 없음
+        404: 게시물 없음
+    """
+    try:
+        post = Post.query.get(post_id)
+        
+        if not post:
+            return jsonify({'error': '게시물을 찾을 수 없습니다'}), 404
+        
+        # 작성자 확인
+        if post.user_id != request.user_id:
+            return jsonify({'error': '게시물을 수정할 권한이 없습니다'}), 403
+        
+        data = request.get_json()
+        
+        if not data or 'text' not in data:
+            return jsonify({'error': '수정할 내용을 입력해주세요'}), 400
+        
+        text = data['text'].strip()
+        
+        # 게시물 길이 검증
+        if len(text) < 1 or len(text) > 500:
+            return jsonify({'error': '게시물은 1-500자 사이여야 합니다'}), 400
+        
+        # AI 서비스를 사용하여 텍스트 변환
+        ai_service = get_ai_service()
+        ai_text = ai_service.transform_text(text)
+        
+        # 변환 검증
+        if not ai_service.validate_transformation(text, ai_text):
+            # 변환이 실패한 경우 원본 텍스트에 간단한 수식어 추가
+            ai_text = f"놀라운 소식! {text}"
+        
+        # 게시물 업데이트
+        post.original_text = text
+        post.ai_text = ai_text  # AI 변환된 텍스트 사용
+        
+        db.session.commit()
+        
+        # 작성자 정보
+        author = User.query.get(post.user_id)
+        
+        # 좋아요 여부 확인
+        is_liked = Like.query.filter_by(
+            user_id=request.user_id,
+            post_id=post_id
+        ).first() is not None
+        
+        return jsonify({
+            'message': '게시물이 수정되었습니다',
+            'post': {
+                'id': post.id,
+                'original_text': post.original_text,
+                'ai_text': post.ai_text,
+                'likes': post.likes,
+                'created_at': post.created_at.isoformat(),
+                'is_liked': is_liked,
+                'author': {
+                    'id': author.id,
+                    'nickname': author.nickname,
+                    'avatar': author.avatar
+                } if author else None
+            }
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': '게시물 수정 중 오류가 발생했습니다'}), 500
 
 
 @posts_bp.route('/<int:post_id>', methods=['DELETE'])
 @auth_required
 def delete_post(post_id):
-    """게시물을 삭제합니다."""
-    post = Post.query.get_or_404(post_id)
+    """
+    게시물 삭제
     
-    # 작성자 확인
-    if post.user_id != request.current_user.id:
-        return jsonify({'error': '권한이 없습니다.'}), 403
+    Args:
+        post_id (int): 게시물 ID
     
-    db.session.delete(post)
-    db.session.commit()
-    
-    return jsonify({'message': '게시물이 삭제되었습니다.'}), 200
-
-
-@posts_bp.route('/<int:post_id>/like', methods=['POST'])
-@auth_required
-def toggle_like(post_id):
-    """게시물 좋아요를 토글합니다."""
-    post = Post.query.get_or_404(post_id)
-    
-    # 기존 좋아요 확인
-    existing_like = Like.query.filter_by(
-        user_id=request.current_user.id,
-        post_id=post_id
-    ).first()
-    
-    if existing_like:
-        # 좋아요 취소
-        db.session.delete(existing_like)
-        is_liked = False
-    else:
-        # 좋아요 추가
-        new_like = Like(
-            user_id=request.current_user.id,
-            post_id=post_id
-        )
-        db.session.add(new_like)
-        is_liked = True
-    
-    db.session.commit()
-    
-    return jsonify({
-        'is_liked': is_liked,
-        'like_count': post.likes.count()
-    }), 200
-
-
-@posts_bp.route('/<int:post_id>/comments', methods=['POST'])
-@auth_required
-def create_comment(post_id):
-    """댓글을 생성합니다."""
-    post = Post.query.get_or_404(post_id)
-    
-    data = request.get_json()
-    original_text = data.get('original_text', '').strip()
-    parent_id = data.get('parent_id')
-    
-    if not original_text:
-        return jsonify({'error': '댓글 내용을 입력해주세요.'}), 400
-    
-    if len(original_text) > 200:
-        return jsonify({'error': '댓글은 200자 이내로 입력해주세요.'}), 400
-    
-    # AI로 댓글 변환
-    content = ai_service.transform_text(original_text)
-    
-    # 댓글 생성
-    comment = Comment(
-        post_id=post_id,
-        user_id=request.current_user.id,
-        parent_id=parent_id,
-        original_text=original_text,
-        content=content,
-        is_bot=False
-    )
-    
-    db.session.add(comment)
-    db.session.commit()
-    
-    # 봇 답글 예약 (대댓글이 아닌 경우만)
-    if not parent_id:
-        def create_bot_reply(comment_id: int, bot_name: str):
-            """봇 답글을 생성합니다."""
-            with current_app.app_context():
-                parent_comment = Comment.query.get(comment_id)
-                if not parent_comment:
-                    return
-                
-                bot_comment_data = ai_service.generate_bot_comment(parent_comment.content, bot_name)
-                
-                reply = Comment(
-                    post_id=post_id,
-                    parent_id=comment_id,
-                    content=bot_comment_data['content'],
-                    is_bot=True,
-                    bot_name=bot_name,
-                    delay=3000
-                )
-                
-                db.session.add(reply)
-                db.session.commit()
+    Returns:
+        200: 삭제 성공
+        403: 권한 없음
+        404: 게시물 없음
+    """
+    try:
+        post = Post.query.get(post_id)
         
-        # 2개의 봇 답글
-        bot_names = random.sample(ai_service.get_bot_names(), 2)
-        for i, bot_name in enumerate(bot_names):
-            delay = random.randint(2, 6) + i * 1.5
-            timer = threading.Timer(delay, create_bot_reply, args=[comment.id, bot_name])
-            timer.start()
+        if not post:
+            return jsonify({'error': '게시물을 찾을 수 없습니다'}), 404
+        
+        # 작성자 확인
+        if post.user_id != request.user_id:
+            return jsonify({'error': '게시물을 삭제할 권한이 없습니다'}), 403
+        
+        # 관련 좋아요와 댓글도 자동으로 삭제됨 (cascade 설정에 의해)
+        db.session.delete(post)
+        db.session.commit()
+        
+        return jsonify({'message': '게시물이 삭제되었습니다'}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': '게시물 삭제 중 오류가 발생했습니다'}), 500
+
+
+@posts_bp.route('/<int:post_id>/regenerate', methods=['POST'])
+@auth_required
+def regenerate_ai_text(post_id):
+    """
+    게시물의 AI 텍스트 재생성
     
-    return jsonify(comment.to_dict(include_replies=True)), 201
+    Args:
+        post_id (int): 게시물 ID
+    
+    Returns:
+        200: 재생성된 AI 텍스트
+        403: 권한 없음
+        404: 게시물 없음
+    """
+    try:
+        post = Post.query.get(post_id)
+        
+        if not post:
+            return jsonify({'error': '게시물을 찾을 수 없습니다'}), 404
+        
+        # 작성자 확인
+        if post.user_id != request.user_id:
+            return jsonify({'error': 'AI 텍스트를 재생성할 권한이 없습니다'}), 403
+        
+        # AI 서비스를 사용하여 텍스트 재생성
+        ai_service = get_ai_service()
+        new_ai_text = ai_service.transform_text(post.original_text)
+        
+        # 변환 검증
+        if not ai_service.validate_transformation(post.original_text, new_ai_text):
+            # 변환이 실패한 경우 기존 텍스트 유지
+            return jsonify({'error': 'AI 텍스트 재생성에 실패했습니다'}), 500
+        
+        # 새로운 AI 텍스트로 업데이트
+        post.ai_text = new_ai_text
+        db.session.commit()
+        
+        # 작성자 정보
+        author = User.query.get(post.user_id)
+        
+        # 좋아요 여부 확인
+        is_liked = Like.query.filter_by(
+            user_id=request.user_id,
+            post_id=post_id
+        ).first() is not None
+        
+        return jsonify({
+            'message': 'AI 텍스트가 재생성되었습니다',
+            'post': {
+                'id': post.id,
+                'original_text': post.original_text,
+                'ai_text': post.ai_text,
+                'likes': post.likes,
+                'created_at': post.created_at.isoformat(),
+                'is_liked': is_liked,
+                'author': {
+                    'id': author.id,
+                    'nickname': author.nickname,
+                    'avatar': author.avatar
+                } if author else None
+            }
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'AI 텍스트 재생성 중 오류가 발생했습니다'}), 500
+
+
+@posts_bp.route('/user/<int:user_id>', methods=['GET'])
+@auth_required
+def get_user_posts(user_id):
+    """
+    특정 사용자의 게시물 목록 조회
+    
+    Args:
+        user_id (int): 사용자 ID
+    
+    Query Parameters:
+        page (int): 페이지 번호 (기본값: 1)
+        limit (int): 페이지당 항목 수 (기본값: 10, 최대: 50)
+    
+    Returns:
+        200: 사용자의 게시물 목록
+        404: 사용자 없음
+    """
+    try:
+        # 사용자 존재 확인
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': '사용자를 찾을 수 없습니다'}), 404
+        
+        # 페이지네이션 파라미터
+        page = request.args.get('page', 1, type=int)
+        limit = min(request.args.get('limit', 10, type=int), 50)
+        
+        # 해당 사용자의 게시물 쿼리
+        posts_query = Post.query.filter_by(user_id=user_id).order_by(desc(Post.created_at))
+        
+        # 페이지네이션 적용
+        paginated = posts_query.paginate(
+            page=page,
+            per_page=limit,
+            error_out=False
+        )
+        
+        # 현재 사용자가 좋아요한 게시물 ID 목록
+        liked_post_ids = db.session.query(Like.post_id).filter_by(
+            user_id=request.user_id
+        ).all()
+        liked_post_ids = [id[0] for id in liked_post_ids]
+        
+        # 게시물 데이터 가공
+        posts_data = []
+        for post in paginated.items:
+            posts_data.append({
+                'id': post.id,
+                'original_text': post.original_text,
+                'ai_text': post.ai_text,
+                'likes': post.likes,
+                'created_at': post.created_at.isoformat(),
+                'is_liked': post.id in liked_post_ids,
+                'author': {
+                    'id': user.id,
+                    'nickname': user.nickname,
+                    'avatar': user.avatar
+                }
+            })
+        
+        return jsonify({
+            'posts': posts_data,
+            'user': {
+                'id': user.id,
+                'nickname': user.nickname,
+                'avatar': user.avatar
+            },
+            'pagination': {
+                'page': paginated.page,
+                'pages': paginated.pages,
+                'per_page': paginated.per_page,
+                'total': paginated.total,
+                'has_prev': paginated.has_prev,
+                'has_next': paginated.has_next
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': '사용자 게시물 조회 중 오류가 발생했습니다'}), 500

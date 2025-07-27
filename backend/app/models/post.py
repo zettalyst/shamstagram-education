@@ -2,7 +2,6 @@
 게시물 모델
 
 사용자가 작성한 게시물 정보를 저장하는 테이블을 정의합니다.
-STEP 13: 좋아요 관계 추가
 """
 
 from datetime import datetime, timezone
@@ -37,24 +36,45 @@ class Post(db.Model):
         """객체를 문자열로 표현"""
         return f'<Post {self.id} by {self.author.nickname}>'
     
-    def to_dict(self, include_author=True):
+    @property
+    def like_count(self):
+        """실제 좋아요 개수 반환"""
+        return self.likes.count()
+    
+    @property 
+    def comment_count(self):
+        """실제 댓글 개수 반환"""
+        return self.comments.count()
+    
+    def to_dict(self, include_author=True, current_user_id=None):
         """
         게시물 정보를 딕셔너리로 변환
         
         Args:
             include_author (bool): 작성자 정보 포함 여부
+            current_user_id (int): 현재 사용자 ID (좋아요 상태 확인용)
             
         Returns:
             dict: 게시물 정보 딕셔너리
         """
+        from app.models.like import Like
+        
         data = {
             'id': self.id,
             'original_text': self.original_text,
             'ai_text': self.ai_text,
             'created_at': self.created_at.isoformat() + 'Z',
-            'like_count': self.likes.count(),
-            'comment_count': self.comments.count()
+            'like_count': self.like_count,
+            'comment_count': self.comment_count
         }
+        
+        # 현재 사용자의 좋아요 상태 확인
+        if current_user_id:
+            is_liked = Like.query.filter_by(
+                user_id=current_user_id,
+                post_id=self.id
+            ).first() is not None
+            data['is_liked'] = is_liked
         
         if include_author:
             data['author'] = {
