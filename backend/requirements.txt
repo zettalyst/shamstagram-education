@@ -2,6 +2,10 @@
 Flask==3.0.0
 Flask-CORS==4.0.0
 
+# 데이터베이스
+Flask-SQLAlchemy==3.1.1
+Flask-Migrate==4.0.5
+
 # 환경 변수 관리
 python-dotenv==1.0.0
 

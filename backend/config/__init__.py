@@ -22,6 +22,14 @@ class Config:
     # CORS 설정 - 프론트엔드 URL 허용
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
     
+    # 데이터베이스 설정
+    # SQLite를 기본으로 사용 (개발 및 학습 목적)
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        'DATABASE_URL',
+        'sqlite:///shamstagram.db'  # 기본값: SQLite
+    )
+    SQLALCHEMY_TRACK_MODIFICATIONS = False  # 성능 향상을 위해 비활성화
+    
     # 기본 설정
     JSON_SORT_KEYS = False  # JSON 응답 키 정렬 비활성화
     

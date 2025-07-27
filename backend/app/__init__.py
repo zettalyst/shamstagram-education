@@ -6,6 +6,15 @@ Flask 애플리케이션 팩토리
 
 from flask import Flask
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+
+
+# 확장(Extension) 인스턴스 생성
+# 애플리케이션 팩토리 패턴에서는 확장을 전역으로 생성하고
+# create_app 함수에서 초기화합니다
+db = SQLAlchemy()
+migrate = Migrate()
 
 
 def create_app(config_class):
@@ -25,11 +34,22 @@ def create_app(config_class):
     # 설정 적용
     app.config.from_object(config_class)
     
+    # 확장 초기화
+    db.init_app(app)
+    migrate.init_app(app, db)
+    
     # CORS 설정 - 프론트엔드와의 통신을 위해 필요
     CORS(app, 
          origins=app.config.get('CORS_ORIGINS', ['*']),
          supports_credentials=True,
          allow_headers=['Content-Type', 'Authorization'])
+    
+    # 애플리케이션 컨텍스트에서 데이터베이스 테이블 생성
+    with app.app_context():
+        # 모든 모델 import (모델이 정의된 후에)
+        from app import models  # noqa
+        # 데이터베이스 테이블 생성
+        db.create_all()
     
     # 블루프린트 등록
     from app.routes import main_bp, health_bp
