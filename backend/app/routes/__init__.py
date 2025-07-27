@@ -5,6 +5,7 @@
 """
 
 from flask import Blueprint, jsonify
+from .auth import auth_bp
 
 # 메인 블루프린트 - 기본 라우트
 main_bp = Blueprint('main', __name__)

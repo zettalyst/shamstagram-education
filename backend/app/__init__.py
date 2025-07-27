@@ -8,6 +8,8 @@ from flask import Flask
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 
 # 확장(Extension) 인스턴스 생성
@@ -15,6 +17,10 @@ from flask_migrate import Migrate
 # create_app 함수에서 초기화합니다
 db = SQLAlchemy()
 migrate = Migrate()
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
 
 
 def create_app(config_class):
@@ -37,6 +43,7 @@ def create_app(config_class):
     # 확장 초기화
     db.init_app(app)
     migrate.init_app(app, db)
+    limiter.init_app(app)
     
     # CORS 설정 - 프론트엔드와의 통신을 위해 필요
     CORS(app, 
@@ -52,9 +59,10 @@ def create_app(config_class):
         db.create_all()
     
     # 블루프린트 등록
-    from app.routes import main_bp, health_bp
+    from app.routes import main_bp, health_bp, auth_bp
     app.register_blueprint(main_bp)
     app.register_blueprint(health_bp, url_prefix='/api')
+    app.register_blueprint(auth_bp)  # /api/auth 접두사는 블루프린트에서 정의됨
     
     # 에러 핸들러 등록
     register_error_handlers(app)

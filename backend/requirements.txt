@@ -9,5 +9,10 @@ Flask-Migrate==4.0.5
 # 환경 변수 관리
 python-dotenv==1.0.0
 
+# 인증 및 보안
+PyJWT==2.8.0  # JWT 토큰 생성 및 검증
+passlib==1.7.4  # 비밀번호 해싱
+Flask-Limiter==3.5.0  # API 속도 제한
+
 # 개발 도구
 gunicorn==21.2.0  # 프로덕션 WSGI 서버

@@ -7,7 +7,7 @@ Flask 개발 서버 실행 스크립트
 
 import os
 from app import create_app
-from config import config
+from config.config import config
 
 # 환경 설정 가져오기 (기본값: development)
 config_name = os.getenv('FLASK_ENV', 'development')

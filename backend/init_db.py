@@ -7,7 +7,7 @@
 import os
 from app import create_app, db
 from app.models import User, Post, Comment, Like, Invitation
-from config import config
+from config.config import config
 
 
 def init_database():
