@@ -11,21 +11,21 @@ Shamstagram은 사용자의 평범한 일상을 AI가 과장되게 변환하여 
 
 총 15개의 브랜치로 구성되어 있으며, 각 브랜치는 특정 기능 구현에 집중합니다:
 
-1. **1_project_setup** - 프로젝트 구조 설정
-2. **2_backend_foundation** - Flask 백엔드 기초
-3. **3_database_models** - 데이터베이스 모델
-4. **4_frontend_foundation** - React 프론트엔드 기초
-5. **5_auth_backend** - 백엔드 인증 시스템
-6. **6_auth_frontend** - 프론트엔드 인증 UI
-7. **7_posts_backend** - 게시물 백엔드 API
-8. **8_posts_frontend** - 게시물 프론트엔드 UI
-9. **9_ai_transformation** - AI 텍스트 변환
-10. **10_bot_personas** - 봇 페르소나 시스템
-11. **11_comments_backend** - 댓글 백엔드 API
-12. **12_comments_frontend** - 댓글 프론트엔드 UI
-13. **13_likes_feature** - 좋아요 기능
-14. **14_invitation_system** - 초대 시스템
-15. **15_docker_deployment** - Docker 배포 설정
+1. **1_project_setup** - 프로젝트 폴더 구조, README, .gitignore, 기본 설정 파일
+2. **2_backend_foundation** - Flask 앱 초기화, 기본 라우트, CORS, 에러 핸들러
+3. **3_database_models** - SQLAlchemy 모델 (User, Post, Comment, Like, Invitation)
+4. **4_frontend_foundation** - React+Vite+TypeScript 설정, 라우터, Tailwind+shadcn/ui
+5. **5_auth_backend** - JWT 인증, 로그인/회원가입 API, 비밀번호 해싱
+6. **6_auth_frontend** - 로그인/회원가입 페이지, AuthContext, Protected routes
+7. **7_posts_backend** - 게시물 CRUD API, 페이지네이션
+8. **8_posts_frontend** - UI: MainFeed, CreatePost, PostCard 컴포넌트
+9. **9_ai_transformation** - AI 텍스트 변환 (OpenAI API + 템플릿 폴백)
+10. **10_bot_personas** - 6개 봇 페르소나, 지연 실행 시스템
+11. **11_comments_backend** - 댓글 API, 스레드 구조, 봇 댓글 자동 생성
+12. **12_comments_frontend** - 댓글 UI, 스레드 표시, 애니메이션
+13. **13_likes_feature** - 좋아요 토글 API, 애니메이션
+14. **14_invitation_system** - 초대 토큰 시스템, 이메일 초대
+15. **15_docker_deployment** - Docker 설정, docker-compose, Nginx, 배포 준비
 
 ## 🚀 시작하기
 
