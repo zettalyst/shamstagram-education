@@ -1,0 +1,19 @@
+{
+  "name": "shamstagram-education",
+  "version": "1.0.0",
+  "description": "AI-powered SNS project for educational purposes",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "dev:both": "concurrently \"cd backend && python run.py\" \"cd frontend && npm run dev\"",
+    "build": "cd frontend && npm run build",
+    "install:all": "cd backend && pip install -r requirements.txt && cd ../frontend && npm install",
+    "test": "echo \"Tests will be added later\""
+  },
+  "keywords": ["ai", "sns", "education", "flask", "react"],
+  "author": "Education Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}
