@@ -1,0 +1,9 @@
+# Flask 핵심 패키지
+Flask==3.0.0
+Flask-CORS==4.0.0
+
+# 환경 변수 관리
+python-dotenv==1.0.0
+
+# 개발 도구
+gunicorn==21.2.0  # 프로덕션 WSGI 서버
