@@ -11,7 +11,7 @@ import { formatNumber, formatRelativeTime } from '../../utils/format';
 import { Card, CardContent, CardFooter, CardHeader } from '../ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '../ui/avatar';
 import { Button } from '../ui/button';
-import { Heart, MessageCircle, Share2, MoreVertical, Sparkles, RefreshCw } from 'lucide-react';
+import { Heart, MessageCircle, Share2, MoreVertical, Sparkles } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,7 +25,6 @@ interface PostCardProps {
   onComment?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
-  onRegenerateAI?: () => void;
 }
 
 export default function PostCard({
@@ -34,12 +33,10 @@ export default function PostCard({
   onComment,
   onEdit,
   onDelete,
-  onRegenerateAI,
 }: PostCardProps) {
   const { user } = useAuth();
   const [isLiked, setIsLiked] = useState(post.is_liked);
   const [likeCount, setLikeCount] = useState(post.likes);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   
   // 작성자 여부 확인
   const isAuthor = user?.id === post.author.id;
@@ -52,20 +49,6 @@ export default function PostCard({
     setIsLiked(!isLiked);
     setLikeCount(isLiked ? likeCount - 1 : likeCount + 1);
     onLike?.();
-  };
-  
-  /**
-   * AI 텍스트 재생성 핸들러
-   */
-  const handleRegenerateAI = async () => {
-    if (!isAuthor || !onRegenerateAI) return;
-    
-    setIsRegenerating(true);
-    try {
-      await onRegenerateAI();
-    } finally {
-      setIsRegenerating(false);
-    }
   };
   
   return (
@@ -123,37 +106,12 @@ export default function PostCard({
         </div>
         
         {/* AI 변환 텍스트 */}
-        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200 relative">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-purple-600" />
-              <p className="text-sm font-semibold text-purple-700">AI 과장 버전</p>
-            </div>
-            
-            {/* 재생성 버튼 (작성자만) */}
-            {isAuthor && onRegenerateAI && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleRegenerateAI}
-                disabled={isRegenerating}
-                className="h-8 px-2 text-purple-600 hover:text-purple-700"
-              >
-                <RefreshCw className={`h-4 w-4 ${isRegenerating ? 'animate-spin' : ''}`} />
-                <span className="ml-1 text-xs">재생성</span>
-              </Button>
-            )}
+        <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="h-4 w-4 text-purple-600" />
+            <p className="text-sm font-semibold text-purple-700">AI 과장 버전</p>
           </div>
-          
-          {/* AI 텍스트 또는 로딩 상태 */}
-          {isRegenerating ? (
-            <div className="flex items-center justify-center py-4">
-              <RefreshCw className="h-5 w-5 text-purple-600 animate-spin" />
-              <span className="ml-2 text-sm text-purple-600">AI가 새로운 과장을 만들고 있습니다...</span>
-            </div>
-          ) : (
-            <p className="text-base font-medium leading-relaxed">{post.ai_text}</p>
-          )}
+          <p className="text-base font-medium leading-relaxed">{post.ai_text}</p>
         </div>
       </CardContent>
       
