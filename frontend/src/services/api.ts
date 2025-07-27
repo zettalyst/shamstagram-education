@@ -197,9 +197,8 @@ export interface Post {
   id: number;
   original_text: string;
   ai_text: string;
-  likes: number;
+  like_count: number;
   created_at: string;
-  is_liked: boolean;
   author: {
     id: number;
     nickname: string;
@@ -455,4 +454,62 @@ export async function deleteComment(commentId: number): Promise<{ message: strin
   }
   
   return response.json();
+}
+
+/**
+ * 좋아요 정보 타입
+ */
+export interface LikeInfo {
+  like_count: number;
+  liked: boolean;
+}
+
+/**
+ * 좋아요 토글 응답 타입
+ */
+export interface LikeToggleResponse {
+  success: boolean;
+  liked: boolean;
+  like_count: number;
+  message: string;
+}
+
+/**
+ * 게시물 좋아요 토글
+ * 
+ * @param postId - 게시물 ID
+ * @returns Promise<LikeToggleResponse>
+ */
+export async function toggleLike(postId: number): Promise<LikeToggleResponse> {
+  const response = await apiRequest(`/posts/${postId}/like`, {
+    method: 'POST',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || '좋아요 처리에 실패했습니다.');
+  }
+  
+  return response.json();
+}
+
+/**
+ * 게시물 좋아요 정보 조회
+ * 
+ * @param postId - 게시물 ID
+ * @returns Promise<LikeInfo>
+ */
+export async function getLikeInfo(postId: number): Promise<LikeInfo> {
+  const response = await apiRequest(`/posts/${postId}/likes`);
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || '좋아요 정보를 가져올 수 없습니다.');
+  }
+  
+  const data = await response.json();
+  return {
+    like_count: data.like_count,
+    liked: data.liked
+  };
 }

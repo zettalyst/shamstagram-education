@@ -1,48 +1,98 @@
 """
 Flask 애플리케이션 팩토리
-교육용 프로젝트 - 11단계: Comments Backend
+
+애플리케이션 인스턴스를 생성하고 설정을 적용합니다.
+STEP 13: 좋아요 기능 추가
 """
 
 from flask import Flask
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager
-from app.models import db, init_models
-from app.routes import comments
-import os
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 
-def create_app(config_name='development'):
-    """Flask 애플리케이션 생성
+
+# 확장(Extension) 인스턴스 생성
+# 애플리케이션 팩토리 패턴에서는 확장을 전역으로 생성하고
+# create_app 함수에서 초기화합니다
+db = SQLAlchemy()
+migrate = Migrate()
+
+
+def create_app(config_class):
+    """
+    Flask 애플리케이션을 생성하고 설정합니다.
     
     Args:
-        config_name: 설정 이름
+        config_class: 사용할 설정 클래스
         
     Returns:
-        Flask: Flask 애플리케이션 인스턴스
+        Flask: 설정이 완료된 Flask 애플리케이션
     """
+    
+    # Flask 앱 생성
     app = Flask(__name__)
     
-    # 기본 설정
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-    app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'jwt-secret-key-change-in-production')
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///shamstagram.db'
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # 설정 적용
+    app.config.from_object(config_class)
     
     # 확장 초기화
     db.init_app(app)
-    CORS(app, origins=['http://localhost:8080'])
-    JWTManager(app)
+    migrate.init_app(app, db)
     
-    # 모델 초기화
+    # CORS 설정 - 프론트엔드와의 통신을 위해 필요
+    CORS(app, 
+         origins=app.config.get('CORS_ORIGINS', ['*']),
+         supports_credentials=True,
+         allow_headers=['Content-Type', 'Authorization'])
+    
+    # 애플리케이션 컨텍스트에서 데이터베이스 테이블 생성
     with app.app_context():
-        init_models()
+        # 모든 모델 import (모델이 정의된 후에)
+        from app import models  # noqa
+        # 데이터베이스 테이블 생성
         db.create_all()
     
     # 블루프린트 등록
-    app.register_blueprint(comments.bp)
+    from app.routes import main_bp, health_bp
+    from app.routes.auth import auth_bp
+    from app.routes.posts import posts_bp
+    from app.routes.users import users_bp
+    from app.routes.invitations import invitations_bp
+    from app.routes.likes import likes_bp  # 좋아요 라우트 추가
     
-    # 기본 라우트
-    @app.route('/api/health')
-    def health_check():
-        return {'status': 'healthy', 'service': 'shamstagram-backend'}, 200
+    app.register_blueprint(main_bp)
+    app.register_blueprint(health_bp, url_prefix='/api')
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(posts_bp, url_prefix='/api/posts')
+    app.register_blueprint(users_bp, url_prefix='/api/users')
+    app.register_blueprint(invitations_bp, url_prefix='/api/invitations')
+    app.register_blueprint(likes_bp, url_prefix='/api')  # 좋아요 라우트 등록
+    
+    # 에러 핸들러 등록
+    register_error_handlers(app)
     
     return app
+
+
+def register_error_handlers(app):
+    """
+    전역 에러 핸들러를 등록합니다.
+    
+    Args:
+        app: Flask 애플리케이션
+    """
+    
+    @app.errorhandler(404)
+    def not_found_error(error):
+        """404 에러 처리"""
+        return {'error': '요청한 리소스를 찾을 수 없습니다.'}, 404
+    
+    @app.errorhandler(500)
+    def internal_error(error):
+        """500 에러 처리"""
+        return {'error': '서버 내부 오류가 발생했습니다.'}, 500
+    
+    @app.errorhandler(400)
+    def bad_request_error(error):
+        """400 에러 처리"""
+        return {'error': '잘못된 요청입니다.'}, 400
