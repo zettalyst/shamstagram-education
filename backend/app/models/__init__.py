@@ -1,20 +1,15 @@
 """
-모델 패키지 초기화
-교육용 프로젝트 - 11단계: Comments Backend
+데이터베이스 모델 패키지
+
+SQLAlchemy를 사용하여 데이터베이스 테이블을 정의합니다.
 """
 
-from flask_sqlalchemy import SQLAlchemy
+# 모든 모델을 여기서 import하여 한 곳에서 관리
+from app.models.user import User
+from app.models.post import Post
+from app.models.comment import Comment
+from app.models.like import Like
+from app.models.invitation import Invitation
 
-# SQLAlchemy 인스턴스 생성
-db = SQLAlchemy()
-
-# 모델 임포트 (순환 참조 방지를 위해 함수 내에서 임포트)
-def init_models():
-    """모든 모델 초기화"""
-    from app.models.user import User
-    from app.models.post import Post
-    from app.models.comment import Comment
-    from app.models.invitation import Invitation
-    from app.models.like import Like
-    
-    return User, Post, Comment, Invitation, Like
+# 다른 모듈에서 쉽게 import할 수 있도록 export
+__all__ = ['User', 'Post', 'Comment', 'Like', 'Invitation']

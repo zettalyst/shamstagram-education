@@ -1,0 +1,66 @@
+{
+    "templates": [
+        {
+            "id": "global_achievement",
+            "template": "방금 전 세계 {number}명 중 단 1명만이 할 수 있는 {action}을(를) 완벽하게 해냈습니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "historic_record",
+            "template": "오늘 {number}년 만에 처음으로 {action}의 신기록을 세웠습니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "standing_ovation",
+            "template": "믿기 어렵겠지만, 제가 {action}을(를) 하자 {number}명의 사람들이 기립박수를 쳤습니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "nasa_certification",
+            "template": "NASA에서 직접 인증한 {action} 마스터가 되었습니다! 전 세계 {number}위입니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "global_broadcast",
+            "template": "{number}개국에서 동시 생중계된 저의 {action} 실력을 보여드렸습니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "harvard_research",
+            "template": "하버드 연구진이 제 {action} 능력을 보고 {number}페이지 논문을 썼다고 합니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "time_magazine",
+            "template": "제가 {action}을(를) 하는 모습이 타임지 표지에 실렸습니다! 벌써 {number}번째입니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "unesco_heritage",
+            "template": "UN에서 저를 {action} 분야의 세계 문화유산으로 지정했습니다! 인류 역사상 {number}번째입니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "olympic_committee",
+            "template": "IOC에서 제 {action} 실력을 보고 {number}년 올림픽 정식 종목 채택을 검토 중입니다!",
+            "variables": ["number", "action"]
+        },
+        {
+            "id": "guinness_record",
+            "template": "기네스북에 {action} 부문 {number}개 기록을 동시에 등재시켰습니다!",
+            "variables": ["number", "action"]
+        }
+    ],
+    "numbers": {
+        "small": ["999", "1,234", "5,678", "9,999"],
+        "medium": ["10,000", "50,000", "88,888", "100,000"],
+        "large": ["700만", "3,000만", "5억", "10억"],
+        "huge": ["50억", "100억", "1조", "100조"],
+        "years": ["100", "500", "1,000", "5,000"],
+        "countries": ["195", "200", "237", "250"]
+    },
+    "action_modifiers": {
+        "prefixes": ["전설적인", "역사적인", "놀라운", "경이로운", "기적적인"],
+        "suffixes": ["의 극치", "의 정점", "의 신기원", "의 새로운 장"]
+    }
+}
