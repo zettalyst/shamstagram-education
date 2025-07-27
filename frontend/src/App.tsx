@@ -5,6 +5,7 @@ import Home from './pages/Home'
 import About from './pages/About'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import MainFeed from './pages/MainFeed'
 import { Button } from './components/ui/button'
 import { LogOut, User } from 'lucide-react'
 
@@ -71,17 +72,6 @@ function Navigation() {
   )
 }
 
-/**
- * 임시 피드 페이지
- */
-function TempFeed() {
-  return (
-    <div className="text-center py-20">
-      <h1 className="text-3xl font-bold mb-4">피드 페이지</h1>
-      <p className="text-gray-600">곧 멋진 과장된 게시물들이 표시될 예정입니다!</p>
-    </div>
-  )
-}
 
 /**
  * 메인 앱 컴포넌트
@@ -109,7 +99,7 @@ function App() {
                 path="/feed"
                 element={
                   <ProtectedRoute>
-                    <TempFeed />
+                    <MainFeed />
                   </ProtectedRoute>
                 }
               />

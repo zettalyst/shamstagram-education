@@ -189,3 +189,155 @@ export function logout(): void {
   // localStorage에서 사용자 정보도 삭제
   localStorage.removeItem('shamstagram-user');
 }
+
+/**
+ * 게시물 타입
+ */
+export interface Post {
+  id: number;
+  original_text: string;
+  ai_text: string;
+  likes: number;
+  created_at: string;
+  is_liked: boolean;
+  author: {
+    id: number;
+    nickname: string;
+    avatar: number;
+  };
+}
+
+/**
+ * 페이지네이션 정보 타입
+ */
+export interface Pagination {
+  page: number;
+  pages: number;
+  per_page: number;
+  total: number;
+  has_prev: boolean;
+  has_next: boolean;
+}
+
+/**
+ * 게시물 목록 응답 타입
+ */
+export interface PostsResponse {
+  posts: Post[];
+  pagination: Pagination;
+}
+
+/**
+ * 게시물 목록 가져오기
+ * 
+ * @param page - 페이지 번호
+ * @param limit - 페이지당 항목 수
+ * @returns Promise<PostsResponse>
+ */
+export async function getPosts(page: number = 1, limit: number = 10): Promise<PostsResponse> {
+  const response = await apiRequest(`/posts?page=${page}&limit=${limit}`);
+  
+  if (!response.ok) {
+    throw new Error('게시물을 불러올 수 없습니다.');
+  }
+  
+  return response.json();
+}
+
+/**
+ * 특정 게시물 가져오기
+ * 
+ * @param postId - 게시물 ID
+ * @returns Promise<{ post: Post }>
+ */
+export async function getPost(postId: number): Promise<{ post: Post }> {
+  const response = await apiRequest(`/posts/${postId}`);
+  
+  if (!response.ok) {
+    throw new Error('게시물을 찾을 수 없습니다.');
+  }
+  
+  return response.json();
+}
+
+/**
+ * 게시물 작성
+ * 
+ * @param text - 게시물 내용
+ * @returns Promise<{ message: string; post: Post }>
+ */
+export async function createPost(text: string): Promise<{ message: string; post: Post }> {
+  const response = await apiRequest('/posts', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || '게시물 작성에 실패했습니다.');
+  }
+  
+  return response.json();
+}
+
+/**
+ * 게시물 수정
+ * 
+ * @param postId - 게시물 ID
+ * @param text - 수정할 내용
+ * @returns Promise<{ message: string; post: Post }>
+ */
+export async function updatePost(postId: number, text: string): Promise<{ message: string; post: Post }> {
+  const response = await apiRequest(`/posts/${postId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ text }),
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || '게시물 수정에 실패했습니다.');
+  }
+  
+  return response.json();
+}
+
+/**
+ * 게시물 삭제
+ * 
+ * @param postId - 게시물 ID
+ * @returns Promise<{ message: string }>
+ */
+export async function deletePost(postId: number): Promise<{ message: string }> {
+  const response = await apiRequest(`/posts/${postId}`, {
+    method: 'DELETE',
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || '게시물 삭제에 실패했습니다.');
+  }
+  
+  return response.json();
+}
+
+/**
+ * 특정 사용자의 게시물 목록 가져오기
+ * 
+ * @param userId - 사용자 ID
+ * @param page - 페이지 번호
+ * @param limit - 페이지당 항목 수
+ * @returns Promise<PostsResponse & { user: User }>
+ */
+export async function getUserPosts(
+  userId: number, 
+  page: number = 1, 
+  limit: number = 10
+): Promise<PostsResponse & { user: User }> {
+  const response = await apiRequest(`/posts/user/${userId}?page=${page}&limit=${limit}`);
+  
+  if (!response.ok) {
+    throw new Error('사용자 게시물을 불러올 수 없습니다.');
+  }
+  
+  return response.json();
+}
