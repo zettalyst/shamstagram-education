@@ -40,3 +40,76 @@
     @apply bg-white rounded-lg shadow-md p-6;
   }
 }
+
+/* 좋아요 애니메이션 */
+@keyframes likeExplosion {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.5) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.like-explosion {
+  position: absolute;
+  pointer-events: none;
+  inset: -20px;
+}
+
+.like-particle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: likeExplosion 0.6s ease-out forwards;
+  transform-origin: center;
+}
+
+.like-particle:nth-child(1) {
+  --angle: 0deg;
+  animation-delay: 0s;
+}
+
+.like-particle:nth-child(2) {
+  --angle: 72deg;
+  animation-delay: 0.1s;
+}
+
+.like-particle:nth-child(3) {
+  --angle: 144deg;
+  animation-delay: 0.2s;
+}
+
+.like-particle:nth-child(4) {
+  --angle: 216deg;
+  animation-delay: 0.3s;
+}
+
+.like-particle:nth-child(5) {
+  --angle: 288deg;
+  animation-delay: 0.4s;
+}
+
+/* 스크롤바 스타일링 */
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+}

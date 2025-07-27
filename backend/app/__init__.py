@@ -53,8 +53,17 @@ def create_app(config_class):
     
     # 블루프린트 등록
     from app.routes import main_bp, health_bp
+    from app.routes.auth import auth_bp
+    from app.routes.posts import posts_bp
+    from app.routes.users import users_bp
+    from app.routes.invitations import invitations_bp
+    
     app.register_blueprint(main_bp)
     app.register_blueprint(health_bp, url_prefix='/api')
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(posts_bp, url_prefix='/api/posts')
+    app.register_blueprint(users_bp, url_prefix='/api/users')
+    app.register_blueprint(invitations_bp, url_prefix='/api/invitations')
     
     # 에러 핸들러 등록
     register_error_handlers(app)

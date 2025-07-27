@@ -6,6 +6,15 @@ Flask-CORS==4.0.0
 Flask-SQLAlchemy==3.1.1
 Flask-Migrate==4.0.5
 
+# 인증 및 보안
+python-jose[cryptography]==3.3.0  # JWT 토큰
+passlib[bcrypt]==1.7.4  # 비밀번호 해싱
+Flask-Limiter==3.5.0  # API 요청 제한
+
+# AI 및 외부 서비스
+openai==1.97.1  # OpenAI API
+requests==2.31.0  # HTTP 요청
+
 # 환경 변수 관리
 python-dotenv==1.0.0
 

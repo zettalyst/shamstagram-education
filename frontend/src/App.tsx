@@ -1,44 +1,91 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import Home from './pages/Home'
-import About from './pages/About'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+
+// Pages
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import FeedPage from './pages/FeedPage'
+import ProfilePage from './pages/ProfilePage'
+import InvitationLandingPage from './pages/InvitationLandingPage'
+
+// Components
+import ProtectedRoute from './components/ProtectedRoute'
+import Navigation from './components/Navigation'
+
+// Services
+import { authService } from './services/auth'
 
 /**
  * 메인 앱 컴포넌트
  * 
- * React Router를 사용하여 페이지 라우팅을 관리합니다.
+ * 인증 상태를 관리하고 라우팅을 처리합니다.
  */
 function App() {
-  return (
-    <BrowserRouter>
-      <div className="min-h-screen bg-gray-50">
-        {/* 헤더 */}
-        <header className="bg-white shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <h1 className="text-2xl font-bold text-primary">
-                Shamstagram
-              </h1>
-              <nav className="space-x-4">
-                <a href="/" className="text-gray-700 hover:text-primary">
-                  홈
-                </a>
-                <a href="/about" className="text-gray-700 hover:text-primary">
-                  소개
-                </a>
-              </nav>
-            </div>
-          </div>
-        </header>
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
-        {/* 라우트 */}
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/about" element={<About />} />
-          </Routes>
-        </main>
+  useEffect(() => {
+    // 초기 인증 상태 확인
+    const checkAuth = async () => {
+      try {
+        const token = authService.getToken()
+        if (token) {
+          const user = await authService.getCurrentUser()
+          if (user) {
+            setIsAuthenticated(true)
+          }
+        }
+      } catch (error) {
+        authService.logout()
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    checkAuth()
+  }, [])
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">로딩 중...</p>
+        </div>
       </div>
-    </BrowserRouter>
+    )
+  }
+
+  return (
+    <Router>
+      <div className="min-h-screen bg-gray-50">
+        {isAuthenticated && <Navigation />}
+        <Routes>
+          {/* 초대 랜딩 페이지 */}
+          <Route path="/" element={<InvitationLandingPage />} />
+          
+          {/* 인증이 필요하지 않은 페이지 */}
+          <Route path="/login" element={
+            isAuthenticated ? <Navigate to="/feed" /> : <LoginPage onLogin={() => setIsAuthenticated(true)} />
+          } />
+          <Route path="/register" element={
+            isAuthenticated ? <Navigate to="/feed" /> : <RegisterPage onRegister={() => setIsAuthenticated(true)} />
+          } />
+          
+          {/* 인증이 필요한 페이지 */}
+          <Route path="/feed" element={
+            <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <FeedPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/profile" element={
+            <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <ProfilePage />
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </div>
+    </Router>
   )
 }
 

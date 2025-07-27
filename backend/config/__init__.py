@@ -18,6 +18,11 @@ class Config:
     
     # 보안 키 - 세션 쿠키 암호화에 사용
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'dev-jwt-secret-key-change-in-production')
+    
+    # JWT 설정
+    JWT_ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
+    JWT_EXPIRATION_HOURS = int(os.getenv('JWT_EXPIRATION_HOURS', 24))
     
     # CORS 설정 - 프론트엔드 URL 허용
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
@@ -29,6 +34,15 @@ class Config:
         'sqlite:///shamstagram.db'  # 기본값: SQLite
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False  # 성능 향상을 위해 비활성화
+    
+    # OpenAI API 설정
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    
+    # 앱 설정
+    MAX_INVITATIONS = int(os.getenv('MAX_INVITATIONS', 10))
+    AI_BOT_COUNT = int(os.getenv('AI_BOT_COUNT', 5))
+    AI_COMMENT_DELAY_MIN = int(os.getenv('AI_COMMENT_DELAY_MIN', 3000))
+    AI_COMMENT_DELAY_MAX = int(os.getenv('AI_COMMENT_DELAY_MAX', 10000))
     
     # 기본 설정
     JSON_SORT_KEYS = False  # JSON 응답 키 정렬 비활성화

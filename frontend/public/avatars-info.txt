@@ -1,0 +1,19 @@
+# Avatar 이미지 정보
+
+이 디렉토리에 `avatars.jpg` 파일을 추가해주세요.
+
+## 파일 사양:
+- 파일명: avatars.jpg
+- 크기: 500x100px (5개의 100x100px 아바타가 가로로 배열)
+- 형식: JPEG
+- 설명: 5개의 아바타 이미지가 가로로 나열된 스프라이트 이미지
+
+## CSS 사용법:
+```css
+background-image: url('/avatars.jpg');
+background-position: 0% 0;    /* Avatar 1 */
+background-position: 25% 0;   /* Avatar 2 */
+background-position: 50% 0;   /* Avatar 3 */
+background-position: 75% 0;   /* Avatar 4 */
+background-position: 100% 0;  /* Avatar 5 */
+```
