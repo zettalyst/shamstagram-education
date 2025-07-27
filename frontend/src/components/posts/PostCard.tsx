@@ -18,6 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
+import CommentSection from '../comments/CommentSection';
 
 interface PostCardProps {
   post: Post;
@@ -37,6 +38,7 @@ export default function PostCard({
   const { user } = useAuth();
   const [isLiked, setIsLiked] = useState(post.is_liked);
   const [likeCount, setLikeCount] = useState(post.likes);
+  const [showComments, setShowComments] = useState(false);
   
   // 작성자 여부 확인
   const isAuthor = user?.id === post.author.id;
@@ -49,6 +51,14 @@ export default function PostCard({
     setIsLiked(!isLiked);
     setLikeCount(isLiked ? likeCount - 1 : likeCount + 1);
     onLike?.();
+  };
+
+  /**
+   * 댓글 버튼 클릭 핸들러
+   */
+  const handleCommentClick = () => {
+    setShowComments(!showComments);
+    onComment?.();
   };
   
   return (
@@ -134,10 +144,10 @@ export default function PostCard({
             <Button
               variant="ghost"
               size="sm"
-              onClick={onComment}
-              className="space-x-1"
+              onClick={handleCommentClick}
+              className={`space-x-1 ${showComments ? 'text-purple-600' : ''}`}
             >
-              <MessageCircle className="h-5 w-5" />
+              <MessageCircle className={`h-5 w-5 ${showComments ? 'fill-current' : ''}`} />
               <span className="text-sm">댓글</span>
             </Button>
             
@@ -158,6 +168,14 @@ export default function PostCard({
           </div>
         </div>
       </CardFooter>
+
+      {/* 댓글 섹션 */}
+      <CommentSection
+        postId={post.id}
+        isVisible={showComments}
+        onToggle={() => setShowComments(!showComments)}
+        initialCommentCount={0}
+      />
     </Card>
   );
 }
