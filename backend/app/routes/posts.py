@@ -8,6 +8,7 @@ from sqlalchemy import desc
 from app.models import Post, User, Like
 from app import db, limiter
 from app.services.auth_service import auth_required
+from app.services.ai_service import get_ai_service
 from datetime import datetime
 import random
 
@@ -161,11 +162,20 @@ def create_post():
         if len(text) < 1 or len(text) > 500:
             return jsonify({'error': '게시물은 1-500자 사이여야 합니다'}), 400
         
+        # AI 서비스를 사용하여 텍스트 변환
+        ai_service = get_ai_service()
+        ai_text = ai_service.transform_text(text)
+        
+        # 변환 검증
+        if not ai_service.validate_transformation(text, ai_text):
+            # 변환이 실패한 경우 원본 텍스트에 간단한 수식어 추가
+            ai_text = f"놀라운 소식! {text}"
+        
         # 게시물 생성
         post = Post(
             user_id=request.user_id,
             original_text=text,
-            ai_text=text,  # 임시로 원본 텍스트 사용 (AI 변환은 9단계에서 구현)
+            ai_text=ai_text,  # AI 변환된 텍스트 사용
             likes=random.randint(50000, 2000000)  # 데모용 초기 좋아요 수
         )
         
@@ -237,9 +247,18 @@ def update_post(post_id):
         if len(text) < 1 or len(text) > 500:
             return jsonify({'error': '게시물은 1-500자 사이여야 합니다'}), 400
         
+        # AI 서비스를 사용하여 텍스트 변환
+        ai_service = get_ai_service()
+        ai_text = ai_service.transform_text(text)
+        
+        # 변환 검증
+        if not ai_service.validate_transformation(text, ai_text):
+            # 변환이 실패한 경우 원본 텍스트에 간단한 수식어 추가
+            ai_text = f"놀라운 소식! {text}"
+        
         # 게시물 업데이트
         post.original_text = text
-        post.ai_text = text  # 임시로 원본 텍스트 사용
+        post.ai_text = ai_text  # AI 변환된 텍스트 사용
         
         db.session.commit()
         
@@ -307,6 +326,74 @@ def delete_post(post_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': '게시물 삭제 중 오류가 발생했습니다'}), 500
+
+
+@posts_bp.route('/<int:post_id>/regenerate', methods=['POST'])
+@auth_required
+def regenerate_ai_text(post_id):
+    """
+    게시물의 AI 텍스트 재생성
+    
+    Args:
+        post_id (int): 게시물 ID
+    
+    Returns:
+        200: 재생성된 AI 텍스트
+        403: 권한 없음
+        404: 게시물 없음
+    """
+    try:
+        post = Post.query.get(post_id)
+        
+        if not post:
+            return jsonify({'error': '게시물을 찾을 수 없습니다'}), 404
+        
+        # 작성자 확인
+        if post.user_id != request.user_id:
+            return jsonify({'error': 'AI 텍스트를 재생성할 권한이 없습니다'}), 403
+        
+        # AI 서비스를 사용하여 텍스트 재생성
+        ai_service = get_ai_service()
+        new_ai_text = ai_service.transform_text(post.original_text)
+        
+        # 변환 검증
+        if not ai_service.validate_transformation(post.original_text, new_ai_text):
+            # 변환이 실패한 경우 기존 텍스트 유지
+            return jsonify({'error': 'AI 텍스트 재생성에 실패했습니다'}), 500
+        
+        # 새로운 AI 텍스트로 업데이트
+        post.ai_text = new_ai_text
+        db.session.commit()
+        
+        # 작성자 정보
+        author = User.query.get(post.user_id)
+        
+        # 좋아요 여부 확인
+        is_liked = Like.query.filter_by(
+            user_id=request.user_id,
+            post_id=post_id
+        ).first() is not None
+        
+        return jsonify({
+            'message': 'AI 텍스트가 재생성되었습니다',
+            'post': {
+                'id': post.id,
+                'original_text': post.original_text,
+                'ai_text': post.ai_text,
+                'likes': post.likes,
+                'created_at': post.created_at.isoformat(),
+                'is_liked': is_liked,
+                'author': {
+                    'id': author.id,
+                    'nickname': author.nickname,
+                    'avatar': author.avatar
+                } if author else None
+            }
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': 'AI 텍스트 재생성 중 오류가 발생했습니다'}), 500
 
 
 @posts_bp.route('/user/<int:user_id>', methods=['GET'])
